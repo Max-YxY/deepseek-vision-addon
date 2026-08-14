@@ -1,0 +1,17 @@
+# 豆包登录态（隐私敏感，绝不上传）
+edge-profile-login/
+edge-profile*/
+
+# 依赖
+node_modules/
+package-lock.json
+
+# 临时图片/截图
+*.png
+*.jpg
+*.jpeg
+
+# 系统/临时
+*.log
+.DS_Store
+Thumbs.db
