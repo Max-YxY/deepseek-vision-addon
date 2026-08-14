@@ -4,9 +4,15 @@
 const { spawn } = require('child_process')
 const path = require('path')
 
-const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+// Edge 可执行文件：优先环境变量 EDGE_PATH，兜底常见安装路径（自动探测，不硬编码用户名）
+const EDGE =
+  process.env.EDGE_PATH ||
+  require('fs').existsSync('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe')
+    ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+    : 'C:/Program Files/Microsoft/Edge/Application/msedge.exe'
 const PORT = 9991
-const BASE = 'E:/ASUS/Documents/deepseek配置/vision-chain'
+// 项目根目录：默认取脚本自身所在目录，可用环境变量 VISION_CHAIN_HOME 覆盖
+const BASE = process.env.VISION_CHAIN_HOME || __dirname
 const PROFILE = path.join(BASE, 'edge-profile-login')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 

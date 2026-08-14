@@ -5,7 +5,8 @@ const { execFileSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 
-const BASE = 'E:/ASUS/Documents/deepseek配置/vision-chain'
+// 项目根目录：默认取脚本自身所在目录，可用环境变量 VISION_CHAIN_HOME 覆盖
+const BASE = process.env.VISION_CHAIN_HOME || __dirname
 
 function fail(msg) {
   console.log(JSON.stringify({ ok: false, error: msg }))

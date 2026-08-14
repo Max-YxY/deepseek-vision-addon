@@ -4,8 +4,11 @@
 // 输出: 最后一行 JSON { ok, reply, error, warning? }
 const fs = require('fs')
 const path = require('path')
+const { createRequire } = require('module')
 
-// playwright-core 解析：优先本地安装，硬路径兜底（npx 缓存可能变化）
+// playwright-core 解析：优先项目本地 node_modules（npm install playwright-core），
+// 其次从 npx 缓存向上解析（兜底，路径自动探测不硬编码用户名）
+const req = createRequire(path.join(__dirname, 'package.json'))
 let chromium
 try {
   // eslint-disable-next-line global-require
@@ -13,15 +16,16 @@ try {
 } catch (e1) {
   try {
     // eslint-disable-next-line global-require
-    chromium = require('C:/Users/ASUS/AppData/Local/npm-cache/_npx/d537ee5ee2a13f03/node_modules/playwright-core').chromium
+    chromium = req('playwright-core').chromium
   } catch (e2) {
-    console.error('playwright-core 未找到，请在 vision-chain 目录执行 npm install playwright-core')
+    console.error('playwright-core 未找到，请在本目录执行: npm install playwright-core')
     process.exit(1)
   }
 }
 
 const PORT = 9991
-const BASE = 'E:/ASUS/Documents/deepseek配置/vision-chain'
+// 项目根目录：默认取脚本自身所在目录，可用环境变量 VISION_CHAIN_HOME 覆盖
+const BASE = process.env.VISION_CHAIN_HOME || __dirname
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // ---- 解析参数 ----

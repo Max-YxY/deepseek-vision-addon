@@ -1,10 +1,11 @@
 // restart-dsh.js：重启 DSH Harness（web 模式）v3
 // 用法: node restart-dsh.js
+// 需要环境变量 DSH_HOME（默认取本机常见位置，可通过 env 覆盖）
 const { spawn, execFileSync } = require('child_process')
 const path = require('path')
 
-const DSH_HOME = 'E:/DeepSeek-Harness/home'
-const NPM_CACHE = 'E:/DeepSeek-Harness/npm-cache'
+const DSH_HOME = process.env.DSH_HOME || 'E:/DeepSeek-Harness/home'
+const NPM_CACHE = process.env.NPM_CONFIG_CACHE || (DSH_HOME.replace(/\/home$/, '') + '/npm-cache')
 const FIND_SCRIPT = path.join(__dirname, 'find-dsh.ps1')
 
 function getPids() {
