@@ -1,10 +1,10 @@
 {
   "name": "dsh-plugin-doubao-vision",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "👀 DeepSeek Vision Addon — 给纯文本 DeepSeek 装上「豆包之眼」：通过豆包网页版免费获得识图能力（零 API 费用）",
   "type": "module",
   "main": "index.js",
-  "files": ["index.js", "cordis.patch.yml"],
+  "files": ["index.js", "cordis.patch.yml", "doubao-identify.cjs", "doubao-vision-core.cjs", "ensure-edge.cjs"],
   "keywords": ["dsh", "deepseek", "plugin", "vision", "doubao", "识图", "multimodal"],
   "license": "MIT",
   "dsh": {
@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "playwright-core": "^1.62.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"

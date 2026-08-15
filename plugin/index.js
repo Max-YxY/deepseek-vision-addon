@@ -66,7 +66,7 @@ export function apply(ctx) {
       const prompt = args.prompt ? String(args.prompt).trim() : ''
       const mode = args.mode === 'brief' ? 'brief' : 'detail'
       const nc = args.new_conversation === false ? 'false' : 'true'
-      const script = BASE + '/doubao-identify.js'
+      const script = BASE + '/doubao-identify.cjs'
       const esc = (s) => '"' + String(s).replace(/"/g, '\\"') + '"'
       const parts = paths.map((p) => esc(p))
       if (prompt) parts.push('--prompt', esc(prompt))
