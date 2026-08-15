@@ -1,0 +1,7 @@
+# 插件安装层：给 DeepSeek Harness 添加 doubao_vision 工具
+# 安装方式（两种任选）：
+#   - 作为 npm 组合包: dsh plugin --profile <name> add dsh-plugin-doubao-vision
+#   - 手动挂载: 在 profile 的 cordis.patch.yml 中添加 insert 行
+- insert:
+    - id: tool-doubao-vision
+      name: 'dsh-plugin-doubao-vision'
