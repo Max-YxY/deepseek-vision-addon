@@ -79,6 +79,13 @@ function riskDetect(text) {
     }
     if (!page) { console.log(JSON.stringify({ ok: false, error: '豆包页面未找到' })); process.exit(0) }
 
+    // ---- 等待页面空闲：若上次回复仍在流式输出，先等它完成（避免状态冲突）----
+    await waitFor(async () => {
+      // 有"停止"按钮 = 正在生成；轮询直到它消失
+      const text = await page.evaluate(() => document.body ? document.body.innerText : '').catch(() => '')
+      return !/停止|stop/i.test(text)
+    }, 30000, 1500)
+
     // ---- 准备新对话（可选）----
     if (newConversation) {
       const clicked = await page.evaluate(() => {
@@ -88,7 +95,21 @@ function riskDetect(text) {
         if (target) { target.click(); return true }
         return false
       }).catch(() => false)
-      if (clicked) await sleep(2500)
+      if (clicked) {
+        // 等待新对话真正就绪：输入框可输入 + 消息区清空 + 无"正在思考"
+        await waitFor(async () => {
+          const state = await page.evaluate(() => {
+            const ta = document.querySelector('textarea')
+            const items = document.querySelector('[class*="list_items"]')
+            const rows = items ? Array.from(items.querySelectorAll('.v_list_row')).filter(r => (r.innerText || '').trim().length > 0) : []
+            const text = document.body ? document.body.innerText : ''
+            return { taReady: !!ta, rowCount: rows.length, thinking: /正在|思考|生成中/.test(text) }
+          }).catch(() => ({ taReady: false, rowCount: -1, thinking: true }))
+          return state.taReady && state.rowCount <= 1 && !state.thinking // 新对话：无旧消息、无流式输出
+        }, 20000, 1000)
+        // 额外等待页面稳定（新对话动画/请求完成）
+        await sleep(2000)
+      }
     }
 
     // ---- 上传图片（带重试）----
@@ -97,24 +118,37 @@ function riskDetect(text) {
     for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
       try {
         await fileInput.setInputFiles(images.map(p => path.resolve(p)), { timeout: 30000 })
-        uploaded = true
+        // 上传后验证：等待图片进入待发送区域（blob 预览 或 "解释图片" 按钮出现）
+        const attachOk = await waitFor(async () => {
+          const state = await page.evaluate(() => {
+            const blobs = Array.from(document.querySelectorAll('img')).filter(i => (i.src || '').startsWith('blob:')).length
+            const text = document.body ? document.body.innerText : ''
+            return { blobs, hasExplain: text.includes('解释图片') }
+          }).catch(() => ({ blobs: 0, hasExplain: false }))
+          return state.blobs > 0 || state.hasExplain
+        }, 15000, 1500)
+        if (attachOk) {
+          uploaded = true
+        } else {
+          console.log('  upload attempt ' + (attempt + 1) + ': no preview detected, retrying')
+          // 清理可能的失败残留（清空输入框重来）
+          await page.keyboard.press('Escape').catch(() => {})
+          await sleep(2000)
+        }
       } catch (e) {
+        console.log('  upload attempt ' + (attempt + 1) + ' error: ' + e.message.slice(0, 80))
         if (attempt === 2) break
         await sleep(3000)
       }
     }
-    if (!uploaded) { console.log(JSON.stringify({ ok: false, error: '图片上传失败（file input 未就绪）' })); process.exit(0) }
+    if (!uploaded) { console.log(JSON.stringify({ ok: false, error: '图片上传失败（多次尝试后未检测到图片预览）' })); process.exit(0) }
 
-    // 条件等待：上传处理完成（出现 blob 预览图 或 "解释图片" 按钮）
-    const uploadOk = await waitFor(async () => {
-      const state = await page.evaluate(() => {
-        const blobs = Array.from(document.querySelectorAll('img')).filter(i => (i.src || '').startsWith('blob:')).length
-        const text = document.body ? document.body.innerText : ''
-        return { blobs, hasExplain: text.includes('解释图片') }
-      }).catch(() => ({ blobs: 0, hasExplain: false }))
-      return state.blobs > 0 || state.hasExplain
-    }, 30000, 1500)
-    if (!uploadOk) { console.log(JSON.stringify({ ok: false, error: '图片上传后未检测到预览' })); process.exit(0) }
+    // 上传确认：确保图片已在待发送区域（再次确认，防抖动）
+    const finalCheck = await page.evaluate(() => {
+      const blobs = Array.from(document.querySelectorAll('img')).filter(i => (i.src || '').startsWith('blob:')).length
+      return blobs > 0
+    }).catch(() => false)
+    if (!finalCheck) { console.log(JSON.stringify({ ok: false, error: '图片上传后预览丢失' })); process.exit(0) }
 
     // 风控检测
     const pageText0 = await page.evaluate(() => document.body ? document.body.innerText : '').catch(() => '')
@@ -125,15 +159,6 @@ function riskDetect(text) {
     const ta = page.locator('textarea:visible').first()
     await ta.click().catch(() => {})
     await ta.fill(prompt)
-
-    // 记录发送前的最后一条消息文本（用于识别新回复）
-    const beforeLast = await page.evaluate(() => {
-      const items = document.querySelector('[class*="list_items"]')
-      if (!items) return ''
-      const rows = Array.from(items.querySelectorAll('.v_list_row')).filter(r => (r.innerText || '').trim().length > 0)
-      const last = rows[rows.length - 1]
-      return last ? last.innerText.trim() : ''
-    }).catch(() => '')
 
     // ---- 发送 ----
     await sleep(800)
@@ -147,6 +172,20 @@ function riskDetect(text) {
       return false
     }).catch(() => false)
     if (!clickedSend) await page.keyboard.press('Enter')
+
+    // 发送后记录"最后一条消息"：此刻最后一行 = 刚发出的用户提示词（含图片消息在其上）
+    // 轮询时只认"不等于提示词"的新行（AI 回复）
+    const promptNormalized = prompt.replace(/\s+/g, '').trim()
+    const beforeLast = await page.evaluate((pn) => {
+      const items = document.querySelector('[class*="list_items"]')
+      if (!items) return pn || '__none__'
+      const rows = Array.from(items.querySelectorAll('.v_list_row')).filter(r => (r.innerText || '').trim().length > 0)
+      const last = rows[rows.length - 1]
+      if (!last) return pn || '__none__'
+      const t = last.innerText.trim()
+      // 若最后一行含提示词（用户消息），用它作基准；否则用提示词文本
+      return t.replace(/\s+/g, '').includes(pn) ? t : (pn || '__none__')
+    }, promptNormalized).catch(() => promptNormalized || '__none__')
 
     // ---- 条件轮询回复（等"最后一条消息"变化为新回复）----
     let replyBlocks = []
@@ -175,7 +214,11 @@ function riskDetect(text) {
         const risk = riskDetect(rowText)
         if (risk) { console.log(JSON.stringify({ ok: false, error: risk })); process.exit(0) }
         const thinking = /正在|思考|生成中/.test(rowText)
-        if (!thinking) {
+        // 关键：排除"提示词复读"（用户消息本身成为最后一行的情况）——AI 回复必须与提示词不同
+        const promptNormalized = prompt.replace(/\s+/g, '').trim()
+        const replyNormalized = (rowText || '').replace(/\s+/g, '').trim()
+        const isPromptEcho = promptNormalized.length > 5 && replyNormalized === promptNormalized
+        if (!thinking && !isPromptEcho) {
           if (rowText !== lastCandidate) {
             lastCandidate = rowText
             replyBlocks = [rowText]
@@ -194,7 +237,14 @@ function riskDetect(text) {
     if (!finalReply) {
       console.log(JSON.stringify({ ok: false, error: '未捕获到豆包回复（可能超时）' }))
     } else {
-      console.log(JSON.stringify({ ok: true, reply: finalReply }))
+      // 防复读保护：豆包回复如果只是重复提示词（图片未被理解），报明确错误
+      const promptNormalized = prompt.replace(/\s+/g, '').trim()
+      const replyNormalized = finalReply.replace(/\s+/g, '').trim()
+      if (promptNormalized.length > 5 && replyNormalized === promptNormalized) {
+        console.log(JSON.stringify({ ok: false, error: '豆包未能理解图片（回复仅为提示词复读），可能图片上传失败或图片内容异常' }))
+      } else {
+        console.log(JSON.stringify({ ok: true, reply: finalReply }))
+      }
     }
   } catch (err) {
     console.log(JSON.stringify({ ok: false, error: err && err.message ? err.message.slice(0, 500) : String(err) }))
